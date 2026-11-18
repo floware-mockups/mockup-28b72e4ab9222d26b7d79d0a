@@ -10,6 +10,7 @@ import {
   chartColumnOf,
   distinctValues,
   emptyTableState,
+  fieldOf,
   kanbanLanes,
   rowFromForm,
   statusColumnOf,
@@ -194,6 +195,8 @@ function App() {
             : "border-b border-(--mk-divider) bg-(--mk-sidebar) p-6 text-(--mk-on-sidebar) md:min-h-screen md:w-64 md:border-r"
         }
       >
+        {/* La barra laterale resta ferma mentre la pagina scorre. */}
+        <div className={topNavigation ? "" : "md:sticky md:top-6"}>
         {resetPlacement === "top" && <div className="mb-5">{resetButton}</div>}
         <div className={topNavigation ? "flex flex-wrap items-center gap-x-6 gap-y-3" : ""}>
           <div
@@ -211,6 +214,7 @@ function App() {
         </div>
         {notice}
         {resetPlacement === "bottom" && resetButton}
+        </div>
       </aside>
       <main className="mx-auto w-full max-w-6xl p-5 md:p-10">
         <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-(--mk-primary)">
@@ -358,12 +362,40 @@ function App() {
                     form.reset();
                   }}
                 >
-                  {page.form.map((f, i) => (
-                    <label key={i} className="grid gap-2 text-sm">
-                      {f}
-                      <input required maxLength={120} name={`field-${i}`} className={field} autoComplete="off" />
-                    </label>
-                  ))}
+                  {page.form.map((f, i) => {
+                    // Tipo del campo riconosciuto dalla colonna, come nell'anteprima di FlowareHub.
+                    const kind = fieldOf(page, i);
+                    const name = `field-${i}`;
+                    return (
+                      <label key={i} className={`grid gap-2 text-sm ${kind.kind === "long" ? "sm:col-span-2" : ""}`}>
+                        {f}
+                        {kind.kind === "choice" ? (
+                          <select required name={name} className={field} defaultValue="">
+                            <option value="" disabled>
+                              Scegli…
+                            </option>
+                            {kind.options.map((o) => (
+                              <option key={o} value={o}>
+                                {o}
+                              </option>
+                            ))}
+                          </select>
+                        ) : kind.kind === "long" ? (
+                          <textarea required maxLength={120} rows={3} name={name} className={field} />
+                        ) : (
+                          <input
+                            required
+                            maxLength={120}
+                            name={name}
+                            className={field}
+                            autoComplete="off"
+                            type={kind.kind === "date" ? "date" : "text"}
+                            inputMode={kind.kind === "number" ? "decimal" : undefined}
+                          />
+                        )}
+                      </label>
+                    );
+                  })}
                   <div className="sm:col-span-2">
                     <button type="submit" className={`rounded-lg px-5 py-2.5 font-medium ${color}`}>
                       Aggiungi

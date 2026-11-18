@@ -50,9 +50,51 @@ export function nextStatus(values: readonly string[], current: string): string {
   return values[(at + 1) % values.length];
 }
 
+// Tipi dei campi del form, riconosciuti da nome e valori della colonna (nessun
+// dato in più nella specifica): lo stesso risultato in anteprima e nel sito pubblicato.
+export type MockupFieldKind = "text" | "long" | "date" | "number" | "choice";
+export type MockupField = { kind: MockupFieldKind; options: string[] };
+const longName = /^(note|nota|descrizione|motivazione|dettagli?|osservazioni|commento|messaggio)\b/i;
+const dateName = /\b(data|scadenza|giorno|nascita)\b/i;
+const numberName = /\b(importo|totale|punteggio|quantit[aà]|numero|prezzo|costo|isee|euro|ore|posti|et[aà])\b|€/i;
+const itDate = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/;
+const numeric = /^[€\s]*-?\d{1,3}(?:[.\s]?\d{3})*(?:,\d+)?\s*(?:€|%)?$|^-?\d+(?:[.,]\d+)?\s*(?:€|%)?$/;
+const isDate = (value: string) => itDate.test(value) || isoDate.test(value);
+/** Data in formato confrontabile «aaaammgg», oppure null. */
+function dateKey(value: string): string | null {
+  const it = itDate.exec(value.trim());
+  if (it) return `${it[3]}${it[2].padStart(2, "0")}${it[1].padStart(2, "0")}`;
+  const iso = isoDate.exec(value.trim());
+  return iso ? `${iso[1]}${iso[2]}${iso[3]}` : null;
+}
+/** Tipo del campo per la colonna `column`, con le opzioni se è un menu a tendina. */
+export function fieldOf(page: MockupPageData, column: number): MockupField {
+  const name = (page.columns[column] ?? "").trim();
+  const values = distinctValues(page.rows, column).filter((v) => v !== "—");
+  const all = (test: (v: string) => boolean) => values.length > 0 && values.every(test);
+  if (column === statusColumnOf(page) && values.length >= 2) return { kind: "choice", options: values.slice(0, 12) };
+  if (longName.test(name)) return { kind: "long", options: [] };
+  if (dateName.test(name) || all(isDate)) return { kind: "date", options: [] };
+  if (numberName.test(name) || all((v) => numeric.test(v))) return { kind: "number", options: [] };
+  // Pochi valori che si ripetono (per esempio Servizio o Ufficio): menu a tendina.
+  if (values.length >= 2 && values.length <= 8 && values.length < page.rows.filter((r) => (r[column] ?? "").trim()).length && all((v) => v.length <= 40))
+    return { kind: "choice", options: values };
+  return { kind: "text", options: [] };
+}
+/** Valore del campo come compare in tabella: le date del calendario diventano gg/mm/aaaa. */
+export function fieldValue(field: MockupField, value: string): string {
+  const iso = field.kind === "date" ? isoDate.exec(value.trim()) : null;
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : value;
+}
+
 const fold = (text: string) =>
   text.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const compare = (a: string, b: string) => {
+  // Le date gg/mm/aaaa si ordinano per data, non come testo.
+  const da = dateKey(a);
+  const db = dateKey(b);
+  if (da && db) return da.localeCompare(db);
   const na = Number(a.replace(/\./g, "").replace(",", "."));
   const nb = Number(b.replace(/\./g, "").replace(",", "."));
   if (a.trim() && b.trim() && Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
@@ -113,7 +155,7 @@ export function rowFromForm(page: MockupPageData, fields: readonly string[]): Mo
   const status = statusColumnOf(page);
   const first = distinctValues(page.rows, status)[0];
   return page.columns.map((_, i) => {
-    const value = (fields[i] ?? "").trim();
+    const value = fieldValue(fieldOf(page, i), (fields[i] ?? "").trim());
     if (value) return value.slice(0, 120);
     return i === status && first ? first : "—";
   });
